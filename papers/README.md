@@ -37,8 +37,8 @@
 - **Title:** QEdgeProxy: QoS-Aware Load Balancing in Edge Computing via Multi-Player Multi-Armed Bandits
 - **Date:** December 2025
 - **Domain:** cs.DC, cs.NI
-- **Key idea:** Multiple proxy nodes independently select edge servers using bandits; handles collisions when multiple proxies pick the same server.
-- **Relevance to sim:** Candidate for multi-agent competitive assignment; tests collision-avoidance in decentralized selection.
+- **Key idea:** Multiple proxy nodes independently select edge servers using bandits; handles collisions when multiple proxies pick the same server. QoS-aware: respects quality-of-service constraints in the bandit reward.
+- **Relevance to sim:** Medium. Candidate for multi-agent competitive assignment. Tests collision-avoidance in decentralized selection. QoS constraints map to task deadlines/priorities.
 - **Implementation notes:** Multi-player bandit with collision handling. Each proxy independently selects; collision resolution needed when two proxies pick same server.
 - **Status:** ⬜ Not implemented (Phase 4 optional)
 
@@ -51,6 +51,7 @@
 - **Key idea:** Load balancing driven by economic incentives (tokens/pricing) rather than pure algorithmic heuristics. Permissionless, decentralized network for complex computations.
 - **Relevance to sim:** Candidate for game-theoretic baseline; useful if we want to test incentive layers later.
 - **Implementation notes:** Requires modeling token/reputation mechanics. Tasks have costs; nodes have incentives to accept or reject. Equilibrium analysis needed.
+- **Status:** ✅ Implemented in `src/incentive_balancer.py`
 
 ---
 
@@ -88,7 +89,8 @@
 6. ✅ Lower bound + LPT batch + list scheduling (`src/lower_bounds.py`, `src/lpt_batch.py`, `src/list_scheduling.py`)
 7. ✅ Sweep-ready runner (`src/simulation_runner.py`) — multi-seed, lower-bound gap metric
 8. ✅ Communication-efficient DML balancing (2405.00839) — mode-aware, heterogeneity scoring
-9. Gossip mechanism for decentralized state sharing (all balancers support snapshot/merge)
+9. ✅ QEdgeProxy multi-player bandit (2512.18915) — multi-proxy UCB with collision resolution
+10. ✅ Incentive-based reputation/pricing (2501.01219) — reputation-weighted scoring, price-aware mode
 
 ---
 

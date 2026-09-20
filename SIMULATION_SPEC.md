@@ -76,6 +76,8 @@ Both use priority queues ordered by sim-time with sequence tie-breaking. Determi
 ||| REPS sprayer | `src/reps_balancer.py` | Adaptive probabilistic routing via entropy recycling |
 ||| RL Q-learning | `src/rl_balancer.py` | Tabular Q-learning: epsilon-greedy, online Q-updates |
 ||| DML heterogeneity-aware | `src/dml_balancer.py` | Communication-efficient DML balancing: mode-aware scoring (queue_aware or capability_aware) |
+||| QEdgeProxy multi-player bandit | `src/qedgeproxy_balancer.py` | Multi-proxy UCB bandits with collision resolution; QoS-aware reward shaping |
+||| Incentive-based reputation/pricing | `src/incentive_balancer.py` | Reputation-weighted cost scoring; reputation updates from observed vs expected cost; price-aware mode |
 
 ### Baselines (offline reference)
 || Baseline | File | Strategy |
