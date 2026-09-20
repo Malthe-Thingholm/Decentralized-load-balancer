@@ -78,12 +78,14 @@
 
 ## Next Steps
 1. ✅ Baselines implemented: Random, Round-robin, Shortest-queue, Power-of-two-choices
-2. ✅ Oracle (optimal) as ground-truth benchmark
-3. ✅ A2WS work-stealing implemented (`src/work_stealing_balancer.py`) — first adaptive baseline
-4. Implement MF-MAB bandit balancer
-5. Sweep harness for multi-seed comparison
-6. Gossip mechanism for state sharing between nodes
-7. RL-based balancer (Phase 3)
+2. ✅ A2WS work-stealing implemented (`src/work_stealing_balancer.py`) — first adaptive baseline
+3. ✅ MF-MAB bandit implemented (`src/mf_mab_balancer.py`) — UCB1 exploration/exploitation
+4. ✅ REPS sprayer implemented (`src/reps_balancer.py`) — entropy-based adaptive routing
+5. ✅ RL Q-learning implemented (`src/rl_balancer.py`) — tabular Q-learning online
+6. ✅ Lower bound + LPT batch + list scheduling (`src/lower_bounds.py`, `src/lpt_batch.py`, `src/list_scheduling.py`)
+7. ✅ Sweep-ready runner (`src/simulation_runner.py`) — multi-seed, lower-bound gap metric
+8. Implement communication-efficient DML balancing (2405.00839)
+9. Gossip mechanism for decentralized state sharing (all balancers support snapshot/merge)
 
 ---
 

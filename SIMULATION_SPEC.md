@@ -65,13 +65,25 @@ Both use priority queues ordered by sim-time with sequence tie-breaking. Determi
 ## Baselines
 
 ### Implemented
-| Balancer | File | Strategy |
+|| Balancer | File | Strategy |
 |----------|------|----------|
-| Random | `src/random_balancer.py` | Uniform random assignment |
-| Round-robin | `src/round_robin_balancer.py` | Cycle through nodes in order |
-| Shortest-queue | `src/shortest_queue_balancer.py` | Pick node with fewest queued tasks |
-| Power-of-two-choices | `src/power_of_two_balancer.py` | Pick 2 random nodes, choose less loaded (k=2) |
-| Work-stealing (A2WS) | `src/work_stealing_balancer.py` | A2WS-inspired: idle nodes steal from overloaded; adaptive threshold |
+|| Random | `src/random_balancer.py` | Uniform random assignment |
+|| Round-robin | `src/round_robin_balancer.py` | Cycle through nodes in order |
+|| Shortest-queue | `src/shortest_queue_balancer.py` | Pick node with fewest queued tasks |
+|| Power-of-two-choices | `src/power_of_two_balancer.py` | Pick 2 random nodes, choose less loaded (k=2) |
+|| Work-stealing (A2WS) | `src/work_stealing_balancer.py` | A2WS-inspired: idle nodes steal from overloaded; adaptive threshold |
+|| MF-MAB bandit | `src/mf_mab_balancer.py` | UCB1 multi-armed bandit: explore/exploit task→node assignment |
+|| REPS sprayer | `src/reps_balancer.py` | Adaptive probabilistic routing via entropy recycling |
+|| RL Q-learning | `src/rl_balancer.py` | Tabular Q-learning: epsilon-greedy, online Q-updates |
+
+### Baselines (offline reference)
+|| Baseline | File | Strategy |
+|----------|------|----------|
+|| LPT batch (true) | `src/lpt_batch.py` | Graham's LPT: sort by descending cost, assign to earliest completion |
+|| LPT batch (guess) | `src/lpt_batch.py` | Same but using imperfect guesses |
+|| List scheduling (true) | `src/list_scheduling.py` | Online greedy: assign each task to earliest-completing node |
+|| List scheduling (guess) | `src/list_scheduling.py` | Same but using imperfect guesses |
+|| Lower bound | `src/lower_bounds.py` | max(work_bound, max_task_bound) — provable floor, no algorithm can beat it |
 
 ### Oracle (ground truth)
 - `src/oracle_balancer.py` — `OracleBalancer`
@@ -121,24 +133,28 @@ Both use priority queues ordered by sim-time with sequence tie-breaking. Determi
 - `sim/` scaffold: event engine, TrueModel stub, assertion wrapper, smoke test
 - `src/` parallel scaffold: event, task, node, balancer protocol, truesim, guess
 
-### Phase 2: Baselines + metrics ✅ (in progress)
+### Phase 2: Baselines + metrics ✅ (done)
 - Random, Round-robin, Shortest-queue, Power-of-two-choices ✅
-- Oracle baseline ✅
+- A2WS work-stealing ✅ (`src/work_stealing_balancer.py`)
+- MF-MAB bandit ✅ (`src/mf_mab_balancer.py`)
+- REPS sprayer ✅ (`src/reps_balancer.py`)
+- RL Q-learning ✅ (`src/rl_balancer.py`)
+- Offline baselines: LPT batch, list scheduling, lower bound ✅ (`src/lpt_batch.py`, `src/list_scheduling.py`, `src/lower_bounds.py`)
 - Metrics ✅
 - Smoke test ✅
-- **Next:** Unify the two parallel scaffolds (`sim/` enum-based vs `src/` protocol-based). Pick one type system as canonical.
+- Runner with queueing model + lower-bound gap metric ✅ (`src/simulation_runner.py`)
+- Multi-seed comparison ✅
 
-### Phase 3: Paper implementations + gossip
-- A2WS work-stealing
-- MF-MAB bandit balancer
-- RL-based adaptive balancer
-- Gossip mechanism for state sharing
+### Phase 3: More papers + gossip
 - Communication-efficient DML balancing (arXiv 2405.00839)
+- Gossip mechanism for state sharing (all paper balancers already support `snapshot()`/`merge()`)
+- QEdgeProxy multi-player bandits (arXiv 2512.18915) — optional
+- Incentive-based game-theoretic LB (arXiv 2501.01219) — optional
 
-### Phase 4: Sweep harness
-- Multi-seed comparison across all balancers
+### Phase 4: Sweep + analysis
 - Confidence intervals on all metrics
-- Regret vs oracle for each strategy
+- Regret/gap-to-LB comparison across all strategies
+- Parameter sweeps (arrival rate, heterogeneity, noise levels)
 
 ## Papers to Implement
 
