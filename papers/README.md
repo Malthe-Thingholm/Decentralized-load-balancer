@@ -30,6 +30,7 @@
 - **Key idea:** Each IoT device acts as a bandit deciding which edge server to offload to; mean-field approximation handles the population size. Solves unknown network info + random task sizes.
 - **Relevance to sim:** Candidate for bandit-based load balancer; maps directly to task→node assignment with exploration/exploitation tradeoff.
 - **Implementation notes:** Each node runs a bandit algorithm; mean-field term captures aggregate population behavior. Exploration vs exploitation tradeoff controlled by confidence bounds.
+- **Status:** ✅ Implemented in `src/mf_mab_balancer.py`
 
 ### 4. QoS-Aware Load Balancing via Multi-Player Bandits (QEdgeProxy)
 - **URL:** https://arxiv.org/abs/2512.18915
@@ -39,6 +40,7 @@
 - **Key idea:** Multiple proxy nodes independently select edge servers using bandits; handles collisions when multiple proxies pick the same server.
 - **Relevance to sim:** Candidate for multi-agent competitive assignment; tests collision-avoidance in decentralized selection.
 - **Implementation notes:** Multi-player bandit with collision handling. Each proxy independently selects; collision resolution needed when two proxies pick same server.
+- **Status:** ⬜ Not implemented (Phase 4 optional)
 
 ### 5. Incentive-Based Decentralized LB
 - **URL:** https://arxiv.org/abs/2501.01219
@@ -63,6 +65,7 @@
 - **Key idea:** Addresses heterogeneity in agents' resources (computation, communication, task size) that creates bottlenecks in decentralized multi-agent learning. Balances training workload across agents.
 - **Relevance to sim:** Heterogeneity-aware balancing; maps to nodes with different capability vectors. Tasks have different sizes; assigns to minimize straggler effect.
 - **Implementation notes:** Focus on balancing workload given heterogeneous node capacities and variable task sizes. May involve grouping/partitioning strategies.
+- **Status:** ✅ Implemented in `src/dml_balancer.py` (modes: queue_aware, capability_aware)
 
 ### 7. RL-Based Adaptive LB for Dynamic Cloud
 - **URL:** https://arxiv.org/abs/2409.04896
@@ -84,7 +87,7 @@
 5. ✅ RL Q-learning implemented (`src/rl_balancer.py`) — tabular Q-learning online
 6. ✅ Lower bound + LPT batch + list scheduling (`src/lower_bounds.py`, `src/lpt_batch.py`, `src/list_scheduling.py`)
 7. ✅ Sweep-ready runner (`src/simulation_runner.py`) — multi-seed, lower-bound gap metric
-8. Implement communication-efficient DML balancing (2405.00839)
+8. ✅ Communication-efficient DML balancing (2405.00839) — mode-aware, heterogeneity scoring
 9. Gossip mechanism for decentralized state sharing (all balancers support snapshot/merge)
 
 ---

@@ -71,10 +71,11 @@ Both use priority queues ordered by sim-time with sequence tie-breaking. Determi
 || Round-robin | `src/round_robin_balancer.py` | Cycle through nodes in order |
 || Shortest-queue | `src/shortest_queue_balancer.py` | Pick node with fewest queued tasks |
 || Power-of-two-choices | `src/power_of_two_balancer.py` | Pick 2 random nodes, choose less loaded (k=2) |
-|| Work-stealing (A2WS) | `src/work_stealing_balancer.py` | A2WS-inspired: idle nodes steal from overloaded; adaptive threshold |
-|| MF-MAB bandit | `src/mf_mab_balancer.py` | UCB1 multi-armed bandit: explore/exploit task→node assignment |
-|| REPS sprayer | `src/reps_balancer.py` | Adaptive probabilistic routing via entropy recycling |
-|| RL Q-learning | `src/rl_balancer.py` | Tabular Q-learning: epsilon-greedy, online Q-updates |
+||| Work-stealing (A2WS) | `src/work_stealing_balancer.py` | A2WS-inspired: idle nodes steal from overloaded; adaptive threshold |
+||| MF-MAB bandit | `src/mf_mab_balancer.py` | UCB1 multi-armed bandit: explore/exploit task→node assignment |
+||| REPS sprayer | `src/reps_balancer.py` | Adaptive probabilistic routing via entropy recycling |
+||| RL Q-learning | `src/rl_balancer.py` | Tabular Q-learning: epsilon-greedy, online Q-updates |
+||| DML heterogeneity-aware | `src/dml_balancer.py` | Communication-efficient DML balancing: mode-aware scoring (queue_aware or capability_aware) |
 
 ### Baselines (offline reference)
 || Baseline | File | Strategy |
