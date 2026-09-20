@@ -48,11 +48,10 @@ class Node:
         service_time = sim_time - self._arrival_times.get(task_id, sim_time)
         self.completed.append(task_id)
         self.total_busy_time += service_time
-        # Queue emptied: record load_end
+        # Queue emptied: record load_end. next_available_time is managed
+        # by the runner's queueing logic — don't overwrite it here.
         if not self.queue:
             self.current_load_end = max(self.current_load_end, sim_time)
-        # Node is free for next task at this sim_time
-        self.next_available_time = sim_time
         if self.on_complete is not None:
             self.on_complete(task_id, self.id, service_time)
         return service_time
