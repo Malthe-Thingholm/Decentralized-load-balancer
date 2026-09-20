@@ -28,21 +28,40 @@ class GuessingModel(Protocol):
 
 
 class StochasticGuessingModel:
-    """Stochastic per-node guess model with optional gossip state."""
+    """Stochastic per-node guess model with optional gossip state.
 
-    def __init__(self, seed: int = 0, error_std: float = 0.2) -> None:
+    Produces cost estimates with configurable noise. The ``cost_scale``
+    parameter puts estimates on the same scale as the true model (default
+    15.0, matching ``StochasticTrueModel.cost_scale``). Without scaling,
+    guess costs are ~1/15 of true costs, making noise negligible after
+    reward normalization — so the balancer can't tell accurate from
+    inaccurate.
+    """
+
+    def __init__(
+        self,
+        seed: int = 0,
+        error_std: float = 0.2,
+        cost_scale: float = 15.0,
+    ) -> None:
         self.rng = random.Random(seed)
         self.error_std = error_std
+        self.cost_scale = cost_scale
         self._state: dict = {"version": 1, "observations": []}
 
     def cost(self, task: Task, node: Node) -> float:
-        """Estimate the execution cost of *task* on *node*."""
+        """Estimate the execution cost of *task* on *node*.
+
+        Returns a noisy estimate on the same scale as the true model:
+        base_cost * cost_scale + N(0, error_std * cost_scale).
+        With error_std=0, the estimate is perfect (up to rounding).
+        """
         cpu_ratio = task.cpu_req / node.cpu_cap
         mem_ratio = task.memory_req / node.memory_cap
         net_ratio = task.network_req / node.network_cap
         base = (cpu_ratio + mem_ratio + net_ratio) / 3.0
-        noise = self.rng.gauss(0, self.error_std)
-        return max(base + noise, 0.0)
+        noise = self.rng.gauss(0, self.error_std * self.cost_scale)
+        return max((base + noise / self.cost_scale) * self.cost_scale, 0.0)
 
     def estimate(self, task: Task, node: Node) -> float:
         """Backward-compatible alias for cost()."""

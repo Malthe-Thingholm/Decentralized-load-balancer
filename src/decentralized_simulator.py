@@ -98,24 +98,22 @@ def _get_snapshot(bal: Balancer) -> dict[str, Any]:
 
 
 def gossip_pair(
-    node_a: DecentralizedNode, node_b: DecentralizedNode
+    source: DecentralizedNode, target: DecentralizedNode
 ) -> GossipExchange | None:
-    """Exchange gossip between two nodes (bidirectional merge).
+    """Gossip from source to target (unidirectional: source sends, target merges).
 
     Returns None if either balancer doesn't support gossip.
     """
-    ba, bb = node_a.balancer, node_b.balancer
-    if not _is_gossip_capable(ba) or not _is_gossip_capable(bb):
+    src_bal, tgt_bal = source.balancer, target.balancer
+    if not _is_gossip_capable(src_bal) or not _is_gossip_capable(tgt_bal):
         return None
 
-    snap_a = _get_snapshot(ba)
-    snap_b = _get_snapshot(bb)
-    ba.merge(snap_b)
-    bb.merge(snap_a)
+    snap = _get_snapshot(src_bal)
+    tgt_bal.merge(snap)
 
     return GossipExchange(
-        sender_id=node_a.node_id,
-        receiver_id=node_b.node_id,
+        sender_id=source.node_id,
+        receiver_id=target.node_id,
         successful=True,
     )
 
@@ -303,6 +301,7 @@ class DecentralizedSimulation:
             self._guess_model = StochasticGuessingModel(
                 seed=self._config.seed + 20,
                 error_std=self._config.guess_model_error,
+                cost_scale=self._config.true_model_cost_scale,
             )
 
     def _create_nodes(self) -> None:
@@ -516,27 +515,32 @@ class DecentralizedSimulation:
         # Update target node's queue_depth (so balancers see accurate state)
         target_node.assign(task['id'])
 
-        # Compute true cost
-        cost = self._true_model.cost(task_obj, target_node)
+        # Compute costs: true cost for scheduling, guessed cost for balancer learning
+        true_cost = self._true_model.cost(task_obj, target_node)
+        guessed_cost = (
+            self._guess_model.cost(task_obj, target_node)
+            if self._guess_model is not None
+            else true_cost
+        )
 
-        # Schedule completion
+        # Schedule completion using TRUE cost (ground truth timing)
         start_time = max(self._current_time, self._next_available[target_id])
-        completion_time = start_time + cost
+        completion_time = start_time + true_cost
         self._next_available[target_id] = completion_time
 
         self._pending_completions.append(
-            (task['id'], target_id, cost, completion_time, task['arrival_time'])
+            (task['id'], target_id, true_cost, guessed_cost, completion_time, task['arrival_time'])
         )
 
     def _process_completions(self) -> None:
         """Process all task completions whose time has come."""
-        still_pending: list[tuple[str, str, float, float, float]] = []
+        still_pending: list[tuple[str, str, float, float, float, float]] = []
 
-        for task_id, node_id, cost, completion_time, arrival_time in self._pending_completions:
+        for task_id, node_id, true_cost, guessed_cost, completion_time, arrival_time in self._pending_completions:
             if completion_time <= self._current_time:
                 self._tasks_completed += 1
                 self._node_completions[node_id] += 1
-                self._node_costs[node_id].append(cost)
+                self._node_costs[node_id].append(true_cost)
 
                 # Per-task latency tracking
                 latency = completion_time - arrival_time
@@ -553,12 +557,13 @@ class DecentralizedSimulation:
                     cpu_req=0, memory_req=0, network_req=0,
                     deadline=None, priority=0,
                 )
-                # Notify all gossip-capable balancers
+                # Notify all gossip-capable balancers — use guessed cost so
+                # they learn from their own (potentially inaccurate) estimates
                 for dn in self._nodes:
                     if _is_gossip_capable(dn.balancer):
-                        dn.balancer.on_complete(task_obj, target_node, cost)
+                        dn.balancer.on_complete(task_obj, target_node, guessed_cost)
             else:
-                still_pending.append((task_id, node_id, cost, completion_time, arrival_time))
+                still_pending.append((task_id, node_id, true_cost, guessed_cost, completion_time, arrival_time))
 
         self._pending_completions = still_pending
 

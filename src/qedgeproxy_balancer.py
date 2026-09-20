@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from src.balancer import Balancer
+from src.guess import StochasticGuessingModel
 from src.node import Node
 from src.task import Task
 
@@ -187,8 +188,56 @@ class QEdgeProxyBalancer:
         self._default_deadline: float | None = None
         self._default_priority: float | None = 1.0
 
-    # ------------------------------------------------------------------
-    # Internal helpers
+        # Guessing model (set via set_guess_model)
+        self._guessing_model: StochasticGuessingModel | None = None
+
+    def set_guess_model(self, model: StochasticGuessingModel) -> None:
+        """Store a reference to the guessing model for cost estimation.
+
+        When set, the balancer uses the model's cost estimates for reward
+        computation instead of true costs, so proxies learn from the
+        balancer's own (potentially inaccurate) estimates.
+        """
+        self._guessing_model = model
+
+    def _get_cost_for_reward(
+        self, task: Task, node: Node, actual_cost: float
+    ) -> float:
+        """Return the cost to use for reward computation.
+
+        If a guessing model is set, returns the estimated cost from that
+        model. Otherwise returns the actual (true) cost.
+        """
+        if self._guessing_model is not None:
+            return self._guessing_model.cost(task, node)
+        return actual_cost
+
+    def _compute_reward(
+        self, task: Task, node: Node, actual_cost: float
+    ) -> float:
+        """Compute reward for a proxy that successfully assigned a task.
+
+        QoS-aware: incorporates deadline penalty and priority weighting.
+        Uses the guessed cost (if a guessing model is set) rather than the
+        true cost, so proxies learn from the balancer's own estimates.
+        """
+        cost = self._get_cost_for_reward(task, node, actual_cost)
+        base_reward = -cost  # negative cost = reward
+
+        # QoS penalty
+        qos_pen = 0.0
+        if self._qos is not None:
+            qos_pen = self._qos.qos_penalty(task, node, cost)
+        else:
+            # Default: use task deadline if available, else no penalty
+            deadline = getattr(task, 'deadline', None)
+            if deadline is not None:
+                qos_pen = deadline_penalty(task, node, cost, deadline)
+
+        priority = priority_weight(task)
+
+        return (base_reward - qos_pen) * priority
+
     # ------------------------------------------------------------------
 
     def _get_node_ids(self, nodes: list[Node]) -> list[str]:

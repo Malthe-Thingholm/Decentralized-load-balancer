@@ -23,8 +23,9 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Protocol
+from typing import Any, Protocol
 
+from src.guess import StochasticGuessingModel
 from src.node import Node
 from src.task import Task
 
@@ -68,7 +69,7 @@ class MeanFieldMABBalancer:
         self._max_cost = max_cost
 
         # Per-arm statistics: keyed by node id
-        self._arm_stats: dict[str, dict] = {}  # node_id -> {sum_reward, count}
+        self._arm_stats: dict[str, dict] = {}
 
         # Global counters
         self._total_pulls = 0
@@ -81,6 +82,38 @@ class MeanFieldMABBalancer:
         # History for snapshot
         self._assignments: list[str] = []
         self._steals: int = 0
+
+        self._guessing_model: StochasticGuessingModel | None = None
+
+    def set_guess_model(self, model: StochasticGuessingModel) -> None:
+        """Store a reference to the guessing model for cost estimation."""
+        self._guessing_model = model
+
+    def _get_reward(self, task: Task, node: Node, actual_cost: float) -> float:
+        """Compute reward for assigning *task* to *node*.
+
+        If a guessing model is available, uses the guessed cost (what the
+        balancer would have estimated) rather than the true cost — this
+        makes the balancer learn from its own (potentially inaccurate)
+        estimates, matching the black-box guessing setup.
+        """
+        if self._guessing_model is not None:
+            estimated_cost = self._guessing_model.cost(task, node)
+        else:
+            estimated_cost = actual_cost
+
+        if self._normalize:
+            self._min_cost = min(self._min_cost, estimated_cost)
+            self._max_cost = max(self._max_cost, estimated_cost)
+            rng = self._max_cost - self._min_cost
+            if rng > 0:
+                normalized_cost = (estimated_cost - self._min_cost) / rng
+            else:
+                normalized_cost = 0.0
+        else:
+            normalized_cost = estimated_cost
+
+        return 1.0 - normalized_cost
 
     def assign(self, task: Task, nodes: list[Node]) -> Node:
         """Assign *task* to the node with highest UCB1 score."""
@@ -130,34 +163,27 @@ class MeanFieldMABBalancer:
     def on_complete(self, task: Task, node: Node, actual_cost: float) -> None:
         """Update bandit statistics with observed cost.
 
-        Converts cost to reward (lower cost = higher reward), updates
-        per-arm stats and the mean-field estimate.
+        Uses the guessing model (if set) to compute the reward from the
+        estimated cost rather than the true cost — so the balancer learns
+        from its own estimates, matching the black-box setup.
         """
         if node.id not in self._arm_stats:
             return
 
-        # Update cost range if normalizing
-        if self._normalize:
-            self._min_cost = min(self._min_cost, actual_cost)
-            self._max_cost = max(self._max_cost, actual_cost)
-            rng = self._max_cost - self._min_cost
-            if rng > 0:
-                normalized_cost = (actual_cost - self._min_cost) / rng
-            else:
-                normalized_cost = 0.0
-        else:
-            normalized_cost = actual_cost
-
-        # Reward = 1 - normalized_cost (higher is better)
-        reward = 1.0 - normalized_cost
+        reward = self._get_reward(task, node, actual_cost)
 
         stats = self._arm_stats[node.id]
         stats["sum_reward"] += reward
         stats["count"] += 1
         self._total_pulls += 1
 
-        # Update mean-field estimate
-        self._cost_sum += actual_cost
+        # Update mean-field estimate using estimated cost
+        if self._guessing_model is not None:
+            estimated_cost = self._guessing_model.cost(task, node)
+        else:
+            estimated_cost = actual_cost
+
+        self._cost_sum += estimated_cost
         self._cost_count += 1
         self._mean_cost = self._cost_sum / self._cost_count
 
@@ -183,7 +209,7 @@ class MeanFieldMABBalancer:
         they merge their bandit statistics.
         """
         if "total_pulls" in other:
-            self._total_pulls = max(self._total_pulls, other["total_pulls"])
+            self._total_pulls += other["total_pulls"]
         if "mean_cost" in other and "cost_count" in other:
             # Weighted average of means
             w1 = self._cost_count

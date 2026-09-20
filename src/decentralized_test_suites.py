@@ -78,7 +78,8 @@ class SuiteConfig:
     gossip: bool              # whether gossip_interval is finite
     gossip_mode: str = 'pairwise_random'
     gossip_network: str = 'complete'
-    sim_duration: float = 30.0
+    sim_duration: float = 300.0
+    gossip_interval: float = 100.0
     seeds: int = 3
     gossip_interval: float = 10.0
 
@@ -111,37 +112,37 @@ def _topo_for_nodes(n: int) -> str:
 # Named suites
 SUITES: list[SuiteConfig] = [
     # ---- Small (10 nodes) ----
-    # System capacity: ~50 tasks per 30s. Light=60% util (arrival_rate≈1.0),
+    # System capacity: ~500 tasks per 300s. Light=60% util (arrival_rate≈1.0),
     # Congested=150% util (arrival_rate≈2.5).
     SuiteConfig(
         name="small_light_accurate",
         num_nodes=10, arrival_rate=1.0, guess_error=0.05,
-        gossip=True, sim_duration=30.0, seeds=5,
+        gossip=True, sim_duration=300.0, seeds=5,
     ),
     SuiteConfig(
         name="small_light_inaccurate",
         num_nodes=10, arrival_rate=1.0, guess_error=0.5,
-        gossip=True, sim_duration=30.0, seeds=5,
+        gossip=True, sim_duration=300.0, seeds=5,
     ),
     SuiteConfig(
         name="small_congested_accurate",
         num_nodes=10, arrival_rate=2.5, guess_error=0.05,
-        gossip=True, sim_duration=30.0, seeds=5,
+        gossip=True, sim_duration=300.0, seeds=5,
     ),
     SuiteConfig(
         name="small_congested_inaccurate",
         num_nodes=10, arrival_rate=2.5, guess_error=0.5,
-        gossip=True, sim_duration=30.0, seeds=5,
+        gossip=True, sim_duration=300.0, seeds=5,
     ),
     SuiteConfig(
         name="small_light_accurate_nogossip",
         num_nodes=10, arrival_rate=1.0, guess_error=0.05,
-        gossip=False, sim_duration=30.0, seeds=5,
+        gossip=False, sim_duration=300.0, seeds=5,
     ),
     SuiteConfig(
         name="small_congested_inaccurate_nogossip",
         num_nodes=10, arrival_rate=2.5, guess_error=0.5,
-        gossip=False, sim_duration=30.0, seeds=5,
+        gossip=False, sim_duration=300.0, seeds=5,
     ),
 
     # ---- Medium (50 nodes) ----
@@ -149,17 +150,17 @@ SUITES: list[SuiteConfig] = [
     SuiteConfig(
         name="medium_light_accurate",
         num_nodes=50, arrival_rate=5.0, guess_error=0.05,
-        gossip=True, sim_duration=40.0, seeds=3,
+        gossip=True, sim_duration=400.0, seeds=3,
     ),
     SuiteConfig(
         name="medium_congested_inaccurate",
         num_nodes=50, arrival_rate=12.0, guess_error=0.5,
-        gossip=True, sim_duration=40.0, seeds=3,
+        gossip=True, sim_duration=400.0, seeds=3,
     ),
     SuiteConfig(
         name="medium_light_accurate_nogossip",
         num_nodes=50, arrival_rate=5.0, guess_error=0.05,
-        gossip=False, sim_duration=40.0, seeds=3,
+        gossip=False, sim_duration=400.0, seeds=3,
     ),
 
     # ---- Large (500 nodes) ----
@@ -167,12 +168,12 @@ SUITES: list[SuiteConfig] = [
     SuiteConfig(
         name="large_light_accurate",
         num_nodes=500, arrival_rate=50.0, guess_error=0.05,
-        gossip=True, sim_duration=60.0, seeds=2,
+        gossip=True, sim_duration=600.0, seeds=2,
     ),
     SuiteConfig(
         name="large_congested_inaccurate",
         num_nodes=500, arrival_rate=125.0, guess_error=0.5,
-        gossip=True, sim_duration=60.0, seeds=2,
+        gossip=True, sim_duration=600.0, seeds=2,
     ),
 ]
 
@@ -282,17 +283,21 @@ def run_suite(suite: SuiteConfig, spec: BalancerSpec) -> list[SweepRow]:
     """
     rows: list[SweepRow] = []
     true_model = StochasticTrueModel(
-        seed=suite.num_nodes * 1000,
+        seed=sum(ord(c) for c in suite.name) * 31 + 10,
         cost_scale=15.0,
         noise_std=0.1,
     )
     guess_model = StochasticGuessingModel(
-        seed=suite.num_nodes * 2000,
+        seed=sum(ord(c) for c in suite.name) * 31 + 20,
         error_std=suite.guess_error,
     )
 
     for seed_idx in range(suite.seeds):
-        seed = suite.num_nodes * 10000 + seed_idx * 1000 + hash(spec.name) % 10000
+        seed = (
+            sum(ord(c) for c in f"{spec.name}:{suite.name}") * 31
+            + seed_idx * 1000
+            + hash(spec.name) % 10000
+        ) % 2000000
         cfg = suite.config(seed)
 
         t0 = time.monotonic()
