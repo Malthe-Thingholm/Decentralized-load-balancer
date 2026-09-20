@@ -28,6 +28,7 @@ class Config:
 
     # TrueModel
     true_model_noise: float = 0.1  # std dev of stochastic cost noise
+    true_model_cost_scale: float = 15.0  # multiplier: cost = base * scale
 
     # GuessingModel
     guess_model_error: float = 0.2  # base estimation error std dev

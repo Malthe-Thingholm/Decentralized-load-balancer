@@ -30,9 +30,10 @@ def assert_cost(func):
 class StochasticTrueModel:
     """Stochastic TrueModel: cost = base_load + Gaussian noise."""
 
-    def __init__(self, seed: int = 42, noise_std: float = 0.1) -> None:
+    def __init__(self, seed: int = 42, noise_std: float = 0.1, cost_scale: float = 15.0) -> None:
         self._rng = random.Random(seed)
         self.noise_std = noise_std
+        self.cost_scale = cost_scale
 
     @assert_cost
     def cost(self, task: Task, node: Node) -> float:
@@ -44,7 +45,7 @@ class StochasticTrueModel:
 
         # Stochastic noise
         noise = self._rng.gauss(0, self.noise_std)
-        cost = base_cost + noise
+        cost = base_cost * self.cost_scale + noise
 
         # Clamp to non-negative (assert_cost also enforces this)
         return max(cost, 0.0)

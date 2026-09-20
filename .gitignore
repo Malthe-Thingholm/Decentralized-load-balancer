@@ -8,3 +8,7 @@ dist/
 build/
 node_modules/
 src/__pycache__/
+sim/__pycache__/
+simulation/__pycache__
+tests/__pycache__
+AGENTS.md/
