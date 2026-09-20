@@ -1,8 +1,15 @@
-"""Integrated simulation runner — wires engine + balancers + true model + metrics.
+"""Integrated simulation runner — wires engine + balancers + true model + metrics + baselines.
 
 This is the top-level entry point for running a full discrete-event simulation:
 task arrivals, balancer decisions, execution on nodes, completion callbacks,
 and metrics collection — all in deterministic sim-time.
+
+Baselines:
+- ListSchedulingTrue: online greedy with true costs (oracle visibility, online)
+- ListSchedulingGuess: online greedy with guessed costs (same info as real balancers)
+- LPTTrue: offline LPT with true costs (best LPT can do with perfect info)
+- LPTGuess: offline LPT with guessed costs (what LPT would see in practice)
+- LowerBound: provable lower bound on optimal makespan (Graham 1969)
 
 Usage:
     python -m src.simulation_runner
@@ -18,14 +25,16 @@ from src.task import Task
 from src.node import Node
 from src.balancer import Balancer
 from src.truesim import StochasticTrueModel
-from src.oracle_balancer import OracleBalancer
+from src.guess import StochasticGuessingModel
+from src.list_scheduling import ListSchedulingTrue, ListSchedulingGuess
+from src.lpt_batch import LPTTrue, LPTGuess
+from src.lower_bounds import combined_bound, relative_gap
 from src.metrics import (
     makespan,
     avg_latency,
     tail_latency,
     jain_fairness,
     utilization,
-    regret,
 )
 from src.config import Config
 
@@ -42,8 +51,8 @@ class SimulationResult:
     tail_latency: float
     jain_fairness: float
     utilization: float
-    regret: float
-    oracle_makespan: float
+    lower_bound: float  # LPT lower bound on optimal makespan for this task set
+    gap_to_lb: float  # (makespan - lb) / lb, always >= 0
     num_tasks: int
     num_completions: int
     sim_duration: float
@@ -58,8 +67,8 @@ class SimulationResult:
             "tail_latency": self.tail_latency,
             "jain_fairness": self.jain_fairness,
             "utilization": self.utilization,
-            "regret": self.regret,
-            "oracle_makespan": self.oracle_makespan,
+            "lower_bound": self.lower_bound,
+            "gap_to_lb": self.gap_to_lb,
             "num_tasks": self.num_tasks,
             "num_completions": self.num_completions,
             "sim_duration": self.sim_duration,
@@ -99,11 +108,24 @@ def generate_tasks(
     return tasks
 
 
+def compute_lower_bound(
+    tasks: list[Task],
+    nodes: list[Node],
+    true_model: StochasticTrueModel,
+) -> float:
+    """Compute the LPT lower bound on optimal makespan for this task set.
+
+    O(n*m) to compute. A valid lower bound — no algorithm can beat it.
+    Uses true costs (the ground truth).
+    """
+    return combined_bound(tasks, nodes, true_model)
+
+
 def run_simulation(
     cfg: Config,
     balancer: Balancer,
     balancer_name: str = "unknown",
-    oracle_balancer: OracleBalancer | None = None,
+    task_list: list[tuple[float, Task]] | None = None,
 ) -> SimulationResult:
     """Run a full discrete-event simulation with the given balancer.
 
@@ -119,6 +141,10 @@ def run_simulation(
         The load balancing strategy to evaluate.
     balancer_name : str
         Human-readable name for the result.
+    task_list : list[tuple[float, Task]] | None
+        If provided, use this exact task sequence (from a seed-aligned
+        generate_tasks call). Used by baseline runners to ensure all
+        baselines see the same task set.
 
     Returns
     -------
@@ -150,10 +176,13 @@ def run_simulation(
     # --- State tracking ---
     task_arrivals: dict[str, float] = {}
     completed_ids: set[str] = set()
-    pending_completions: dict[str, tuple[Task, Node, float]] = {}
 
     # --- Schedule task arrivals ---
-    tasks = generate_tasks(cfg, rng, cfg.sim_duration)
+    if task_list is not None:
+        tasks = task_list
+    else:
+        tasks = generate_tasks(cfg, rng, cfg.sim_duration)
+
     for arrival_time, task in tasks:
         sim.schedule(
             Event(
@@ -199,54 +228,9 @@ def run_simulation(
             balancer.on_complete(task, node, actual_cost)
             completed_ids.add(task.id)
 
-    # --- Oracle pass (if oracle provided) ---
-    oracle_makespan = 0.0
-    if oracle_balancer is not None:
-        oracle_nodes: dict[str, Node] = {}
-        for i in range(cfg.num_nodes):
-            node_id = f"node-{i}"
-            oracle_nodes[node_id] = Node(
-                id=node_id,
-                cpu_cap=nodes[node_id].cpu_cap,
-                memory_cap=nodes[node_id].memory_cap,
-                network_cap=nodes[node_id].network_cap,
-            )
-        oracle_tasks = [
-            Task(
-                id=t.id,
-                cpu_req=t.cpu_req,
-                memory_req=t.memory_req,
-                network_req=t.network_req,
-                deadline=t.deadline,
-                priority=t.priority,
-                arrival_time=t.arrival_time,
-            )
-            for _, t in tasks
-        ]
-        oracle_model = StochasticTrueModel(
-            seed=cfg.seed + 3000,
-            noise_std=cfg.true_model_noise,
-            cost_scale=cfg.true_model_cost_scale,
-        )
-        oracle_balancer._true_model = oracle_model
-        for task in oracle_tasks:
-            best_node = oracle_balancer.assign(task, list(oracle_nodes.values()))
-            cost = oracle_model.cost(task, best_node)
-            start_time = max(task.arrival_time, best_node.next_available_time)
-            completion_time = start_time + cost
-            best_node.next_available_time = completion_time
-            best_node.assign(task.id)
-            best_node.completed.append(task.id)
-            best_node.total_busy_time += cost
-        # Oracle makespan = max completion time across all nodes
-        # (next_available_time tracks when each node finishes its last task)
-        oracle_makespan = max(
-            (n.next_available_time for n in oracle_nodes.values()), default=0.0
-        )
-        # FIX: oracle pass used next_available_time but it was already updated above.
-        # The real issue: oracle_makespan was being overwritten to 0.0 in SimulationResult.
-        # The oracle_makespan variable is correct — pass it through.
+    # --- Collect metrics ---
     node_list = list(nodes.values())
+    lb = compute_lower_bound([t for _, t in tasks], node_list, true_model)
     result = SimulationResult(
         config=cfg,
         seed=cfg.seed,
@@ -258,8 +242,8 @@ def run_simulation(
         ),
         jain_fairness=jain_fairness(node_list),
         utilization=utilization(node_list, cfg.sim_duration),
-        regret=regret(node_list, task_arrivals, oracle_makespan),
-        oracle_makespan=oracle_makespan,
+        lower_bound=lb,
+        gap_to_lb=relative_gap(makespan(node_list), lb),
         num_tasks=len(tasks),
         num_completions=len(completed_ids),
         sim_duration=cfg.sim_duration,
@@ -271,10 +255,9 @@ def run_simulation(
 def compare_balancers(
     cfg: Config,
     balancers: list[tuple[str, Balancer]],
-    oracle_balancer: OracleBalancer | None = None,
     num_seeds: int | None = None,
 ) -> list[SimulationResult]:
-    """Run multiple balancers and collect results.
+    """Run multiple online balancers and collect results.
 
     Each balancer is run with the same task arrival sequence (same seed)
     for fair comparison. If num_seeds is provided, multiple seeds are used
@@ -304,22 +287,105 @@ def compare_balancers(
                 true_model_noise=cfg.true_model_noise,
                 guess_model_error=cfg.guess_model_error,
             )
+            # Generate tasks once per seed so all baselines see the same set
+            _rng = random.Random(run_cfg.seed)
+            _tasks = generate_tasks(run_cfg, _rng, run_cfg.sim_duration)
             result = run_simulation(
                 run_cfg,
                 balancer=balancer,
                 balancer_name=f"{balancer_name}-s{seed_idx}",
-                oracle_balancer=oracle_balancer,
+                task_list=_tasks,
             )
             all_results.append(result)
     return all_results
 
 
+def run_baseline_comparison(
+    cfg: Config,
+    balancers: list[tuple[str, Balancer]],
+    baselines: list[tuple[str, Balancer]],
+    num_seeds: int | None = None,
+) -> list[SimulationResult]:
+    """Run offline baselines and collect results.
+
+    Offline baselines (LPT) compute their schedule post-hoc on the same
+    task set generated by this seed.
+    """
+    if num_seeds is None:
+        num_seeds = cfg.num_seeds
+
+    all_results: list[SimulationResult] = []
+
+    for seed_idx in range(num_seeds):
+        run_cfg = Config(
+            seed=cfg.seed + seed_idx,
+            num_nodes=cfg.num_nodes,
+            sim_duration=cfg.sim_duration,
+            balancer_tick_interval=cfg.balancer_tick_interval,
+            gossip_interval=cfg.gossip_interval,
+            task_arrival_rate=cfg.task_arrival_rate,
+            task_cpu_mean=cfg.task_cpu_mean,
+            task_mem_mean=cfg.task_mem_mean,
+            task_net_mean=cfg.task_net_mean,
+            node_cpu_range=cfg.node_cpu_range,
+            node_mem_range=cfg.node_mem_range,
+            node_net_range=cfg.node_net_range,
+            tail_latency_percentile=cfg.tail_latency_percentile,
+            num_seeds=cfg.num_seeds,
+            true_model_noise=cfg.true_model_noise,
+            guess_model_error=cfg.guess_model_error,
+        )
+
+        _rng = random.Random(run_cfg.seed)
+        _nodes: dict[str, Node] = {}
+        for i in range(run_cfg.num_nodes):
+            node_id = f"node-{i}"
+            _nodes[node_id] = Node(
+                id=node_id,
+                cpu_cap=_rng.uniform(*run_cfg.node_cpu_range),
+                memory_cap=_rng.uniform(*run_cfg.node_mem_range),
+                network_cap=_rng.uniform(*run_cfg.node_net_range),
+            )
+
+        _true_model = StochasticTrueModel(
+            seed=run_cfg.seed + 1000,
+            noise_std=run_cfg.true_model_noise,
+            cost_scale=run_cfg.true_model_cost_scale,
+        )
+
+        _tasks = generate_tasks(run_cfg, _rng, run_cfg.sim_duration)
+        _task_list = [t for _, t in _tasks]
+
+        for baseline_name, baseline in baselines:
+            makespan_val = baseline.makespan(_task_list, list(_nodes.values()))
+            lb = compute_lower_bound(_task_list, list(_nodes.values()), _true_model)
+
+            result = SimulationResult(
+                config=run_cfg,
+                seed=run_cfg.seed,
+                balancer_name=f"{baseline_name}-s{seed_idx}",
+                makespan=makespan_val,
+                avg_latency=0.0,
+                tail_latency=0.0,
+                jain_fairness=0.0,
+                utilization=0.0,
+                lower_bound=lb,
+                gap_to_lb=relative_gap(makespan_val, lb),
+                num_tasks=len(_task_list),
+                num_completions=len(_task_list),
+                sim_duration=run_cfg.sim_duration,
+            )
+            all_results.append(result)
+
+    return all_results
+
+
 def print_results(results: list[SimulationResult]) -> None:
     """Print a formatted summary of simulation results."""
-    print(f"\n{'='*72}")
+    print(f"\n{'='*90}")
     header = (
         f"{'Balancer':<30} {'Seed':<6} {'Makespan':>10} {'AvgLat':>8} "
-        f"{'Tail99':>8} {'Jain':>6} {'Util':>6} {'Regret':>8}"
+        f"{'Tail99':>8} {'Jain':>6} {'Util':>6} {'LB':>8} {'Gap(LB)':>8}"
     )
     print(header)
     print("-" * len(header))
@@ -327,9 +393,28 @@ def print_results(results: list[SimulationResult]) -> None:
         print(
             f"{r.balancer_name:<30} {r.seed:<6} {r.makespan:>10.3f} "
             f"{r.avg_latency:>8.3f} {r.tail_latency:>8.3f} "
-            f"{r.jain_fairness:>6.3f} {r.utilization:>6.3f} {r.regret:>8.3f}"
+            f"{r.jain_fairness:>6.3f} {r.utilization:>6.3f} "
+            f"{r.lower_bound:>8.3f} {r.gap_to_lb:>8.3f}"
         )
-    print(f"{'='*72}\n")
+    print(f"{'='*90}\n")
+
+    # Group by balancer name, compute means
+    from collections import defaultdict
+    by_name: dict[str, list[SimulationResult]] = defaultdict(list)
+    for r in results:
+        base = r.balancer_name.rsplit("-s", 1)[0]
+        by_name[base].append(r)
+
+    print("Per-balancer averages:")
+    for name in sorted(by_name.keys()):
+        results_list = by_name[name]
+        avg_m = sum(r.makespan for r in results_list) / len(results_list)
+        avg_g = sum(r.gap_to_lb for r in results_list) / len(results_list)
+        avg_j = sum(r.jain_fairness for r in results_list) / len(results_list)
+        print(
+            f"  {name:<25} makespan={avg_m:.3f}  "
+            f"gap_to_lb={avg_g:.4f}  jain={avg_j:.3f}"
+        )
 
 
 if __name__ == "__main__":
@@ -338,11 +423,13 @@ if __name__ == "__main__":
     from src.shortest_queue_balancer import ShortestQueueBalancer
     from src.power_of_two_balancer import PowerOfTwoChoicesBalancer
     from src.work_stealing_balancer import WorkStealingBalancer
+    from src.list_scheduling import ListSchedulingTrue, ListSchedulingGuess
+    from src.lpt_batch import LPTTrue, LPTGuess
 
     cfg = Config(seed=42, num_nodes=5, sim_duration=50.0, num_seeds=1)
 
-    oracle = OracleBalancer()
-    balancers = [
+    # Online balancers (run in event loop)
+    online = [
         ("Random", RandomBalancer(seed=42)),
         ("RoundRobin", RoundRobinBalancer()),
         ("ShortestQueue", ShortestQueueBalancer()),
@@ -350,19 +437,23 @@ if __name__ == "__main__":
         ("WorkStealing", WorkStealingBalancer(seed=42)),
     ]
 
-    results = compare_balancers(cfg, balancers, oracle_balancer=oracle)
-    print_results(results)
+    # Seed models' RNGs so all balancers see identical cost estimates
+    _true_model = StochasticTrueModel(
+        seed=42 + 1000,
+        noise_std=cfg.true_model_noise,
+        cost_scale=cfg.true_model_cost_scale,
+    )
+    _guess_model = StochasticGuessingModel(
+        seed=42 + 2000,
+        error_std=cfg.guess_model_error,
+    )
+    _true_model.rng.seed(42 + 1000)
+    _guess_model.rng.seed(42 + 2000)
 
-    # Per-balancer averages
-    print("Per-balancer averages:")
-    for name, _ in balancers:
-        name_results = [r for r in results if r.balancer_name.startswith(name)]
-        if not name_results:
-            continue
-        avg_makespan = sum(r.makespan for r in name_results) / len(name_results)
-        avg_regret = sum(r.regret for r in name_results) / len(name_results)
-        avg_jain = sum(r.jain_fairness for r in name_results) / len(name_results)
-        print(
-            f"  {name:<20} makespan={avg_makespan:.3f}  "
-            f"regret={avg_regret:.4f}  jain={avg_jain:.3f}"
-        )
+    offline = [
+        ("LPT-True", LPTTrue(_true_model)),
+        ("LPT-Guess", LPTGuess(_guess_model)),
+    ]
+
+    results = compare_balancers(cfg, online)
+    print_results(results)

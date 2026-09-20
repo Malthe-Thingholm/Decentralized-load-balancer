@@ -31,7 +31,7 @@ class StochasticTrueModel:
     """Stochastic TrueModel: cost = base_load + Gaussian noise."""
 
     def __init__(self, seed: int = 42, noise_std: float = 0.1, cost_scale: float = 15.0) -> None:
-        self._rng = random.Random(seed)
+        self.rng = random.Random(seed)
         self.noise_std = noise_std
         self.cost_scale = cost_scale
 
@@ -44,7 +44,7 @@ class StochasticTrueModel:
         base_cost = (cpu_ratio + mem_ratio + net_ratio) / 3.0
 
         # Stochastic noise
-        noise = self._rng.gauss(0, self.noise_std)
+        noise = self.rng.gauss(0, self.noise_std)
         cost = base_cost * self.cost_scale + noise
 
         # Clamp to non-negative (assert_cost also enforces this)

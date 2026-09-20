@@ -12,8 +12,13 @@ from src.task import Task
 class GuessingModel(Protocol):
     """Per-node model for estimating task cost."""
 
-    def estimate(self, task: Task, node: Node) -> float:
+    def cost(self, task: Task, node: Node) -> float:
+        """Estimate the execution cost of *task* on *node*."""
         ...
+
+    def estimate(self, task: Task, node: Node) -> float:
+        """Alias for cost() — for backward compatibility with existing code."""
+        return self.cost(task, node)
 
     def snapshot(self) -> dict:
         ...
@@ -26,18 +31,22 @@ class StochasticGuessingModel:
     """Stochastic per-node guess model with optional gossip state."""
 
     def __init__(self, seed: int = 0, error_std: float = 0.2) -> None:
-        self._rng = random.Random(seed)
+        self.rng = random.Random(seed)
         self.error_std = error_std
         self._state: dict = {"version": 1, "observations": []}
 
-    def estimate(self, task: Task, node: Node) -> float:
-        # Base estimate: same as TrueModel but with estimation error
+    def cost(self, task: Task, node: Node) -> float:
+        """Estimate the execution cost of *task* on *node*."""
         cpu_ratio = task.cpu_req / node.cpu_cap
         mem_ratio = task.memory_req / node.memory_cap
         net_ratio = task.network_req / node.network_cap
         base = (cpu_ratio + mem_ratio + net_ratio) / 3.0
-        noise = self._rng.gauss(0, self.error_std)
+        noise = self.rng.gauss(0, self.error_std)
         return max(base + noise, 0.0)
+
+    def estimate(self, task: Task, node: Node) -> float:
+        """Backward-compatible alias for cost()."""
+        return self.cost(task, node)
 
     def snapshot(self) -> dict:
         return dict(self._state)

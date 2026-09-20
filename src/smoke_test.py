@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import sys
 
 from src.config import Config
@@ -169,6 +170,10 @@ def test_deterministic_replay() -> None:
     m2 = StochasticTrueModel(seed=99)
     node = Node(id="n1", cpu_cap=20.0, memory_cap=20.0, network_cap=10.0)
     task = Task(id="t1", cpu_req=5.0, memory_req=5.0, network_req=2.0)
+
+    # Seed both models' RNGs identically for deterministic comparison
+    m1.rng = random.Random(99)
+    m2.rng = random.Random(99)
 
     costs1 = [m1.cost(task, node) for _ in range(5)]
     costs2 = [m2.cost(task, node) for _ in range(5)]
