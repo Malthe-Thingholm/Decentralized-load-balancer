@@ -337,7 +337,8 @@ class DecentralizedSimulation:
                 right = self._nodes[(i + 1) % n].node_id
                 node.gossip_neighbors = [left, right]
         elif mode == 'random_k':
-            k = max(1, n // 2)
+            import math
+            k = max(1, int(math.sqrt(n)))
             for node in self._nodes:
                 others = [o.node_id for o in self._nodes if o.node_id != node.node_id]
                 node.gossip_neighbors = self._rng.sample(others, min(k, len(others)))
