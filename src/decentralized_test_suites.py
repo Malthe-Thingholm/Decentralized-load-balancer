@@ -111,63 +111,67 @@ def _topo_for_nodes(n: int) -> str:
 # Named suites
 SUITES: list[SuiteConfig] = [
     # ---- Small (10 nodes) ----
+    # System capacity: ~50 tasks per 30s. Light=60% util (arrival_rate≈1.0),
+    # Congested=150% util (arrival_rate≈2.5).
     SuiteConfig(
         name="small_light_accurate",
-        num_nodes=10, arrival_rate=5.0, guess_error=0.05,
+        num_nodes=10, arrival_rate=1.0, guess_error=0.05,
         gossip=True, sim_duration=30.0, seeds=5,
     ),
     SuiteConfig(
         name="small_light_inaccurate",
-        num_nodes=10, arrival_rate=5.0, guess_error=0.5,
+        num_nodes=10, arrival_rate=1.0, guess_error=0.5,
         gossip=True, sim_duration=30.0, seeds=5,
     ),
     SuiteConfig(
         name="small_congested_accurate",
-        num_nodes=10, arrival_rate=20.0, guess_error=0.05,
+        num_nodes=10, arrival_rate=2.5, guess_error=0.05,
         gossip=True, sim_duration=30.0, seeds=5,
     ),
     SuiteConfig(
         name="small_congested_inaccurate",
-        num_nodes=10, arrival_rate=20.0, guess_error=0.5,
+        num_nodes=10, arrival_rate=2.5, guess_error=0.5,
         gossip=True, sim_duration=30.0, seeds=5,
     ),
     SuiteConfig(
         name="small_light_accurate_nogossip",
-        num_nodes=10, arrival_rate=5.0, guess_error=0.05,
+        num_nodes=10, arrival_rate=1.0, guess_error=0.05,
         gossip=False, sim_duration=30.0, seeds=5,
     ),
     SuiteConfig(
         name="small_congested_inaccurate_nogossip",
-        num_nodes=10, arrival_rate=20.0, guess_error=0.5,
+        num_nodes=10, arrival_rate=2.5, guess_error=0.5,
         gossip=False, sim_duration=30.0, seeds=5,
     ),
 
     # ---- Medium (50 nodes) ----
+    # System capacity: ~328 tasks per 40s. Light≈5.0, Congested≈12.0.
     SuiteConfig(
         name="medium_light_accurate",
-        num_nodes=50, arrival_rate=25.0, guess_error=0.05,
+        num_nodes=50, arrival_rate=5.0, guess_error=0.05,
         gossip=True, sim_duration=40.0, seeds=3,
     ),
     SuiteConfig(
         name="medium_congested_inaccurate",
-        num_nodes=50, arrival_rate=100.0, guess_error=0.5,
+        num_nodes=50, arrival_rate=12.0, guess_error=0.5,
         gossip=True, sim_duration=40.0, seeds=3,
     ),
     SuiteConfig(
         name="medium_light_accurate_nogossip",
-        num_nodes=50, arrival_rate=25.0, guess_error=0.05,
+        num_nodes=50, arrival_rate=5.0, guess_error=0.05,
         gossip=False, sim_duration=40.0, seeds=3,
     ),
 
     # ---- Large (500 nodes) ----
+    # System capacity: ~4918 tasks per 60s. Light≈50.0, Congested≈125.0.
     SuiteConfig(
         name="large_light_accurate",
-        num_nodes=500, arrival_rate=250.0, guess_error=0.05,
+        num_nodes=500, arrival_rate=50.0, guess_error=0.05,
         gossip=True, sim_duration=60.0, seeds=2,
     ),
     SuiteConfig(
         name="large_congested_inaccurate",
-        num_nodes=500, arrival_rate=1000.0, guess_error=0.5,
+        num_nodes=500, arrival_rate=125.0, guess_error=0.5,
         gossip=True, sim_duration=60.0, seeds=2,
     ),
 ]

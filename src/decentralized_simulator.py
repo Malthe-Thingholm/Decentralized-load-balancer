@@ -240,6 +240,10 @@ class DecentralizedResult:
     tasks_generated: int
     tasks_completed: int
     state_convergence: float | None = None
+    avg_latency: float = 0.0
+    tail_latency: float = 0.0
+    node_utilization: dict[str, float] = field(default_factory=dict)
+    task_latencies: list[float] = field(default_factory=list)
 
 
 class DecentralizedSimulation:
@@ -281,8 +285,12 @@ class DecentralizedSimulation:
         self._node_completions: dict[str, int] = defaultdict(int)
         self._node_costs: dict[str, list[float]] = defaultdict(list)
 
-        # Pending completions: list of (task_id, node_id, cost, completion_time)
-        self._pending_completions: list[tuple[str, str, float, float]] = []
+        # Per-task latency and per-node busy time tracking
+        self._task_latencies: list[float] = []
+        self._node_busy_time: dict[str, float] = defaultdict(float)
+
+        # Pending completions: list of (task_id, node_id, cost, completion_time, arrival_time)
+        self._pending_completions: list[tuple[str, str, float, float, float]] = []
 
         if self._true_model is None:
             self._true_model = StochasticTrueModel(
@@ -447,11 +455,23 @@ class DecentralizedSimulation:
         node_totals = {}
         for nid in set(list(self._node_completions.keys()) + list(self._node_costs.keys())):
             costs = self._node_costs.get(nid, [])
+            busy = self._node_busy_time.get(nid, 0.0)
+            sim_dur = self._config.sim_duration
             node_totals[nid] = {
                 'total_cost': sum(costs),
                 'task_count': self._node_completions.get(nid, 0),
                 'avg_cost': sum(costs) / len(costs) if costs else 0.0,
+                'utilization': busy / sim_dur if sim_dur > 0 else 0.0,
             }
+
+        # Per-task latency stats
+        all_latencies = list(self._task_latencies)
+        avg_latency = sum(all_latencies) / len(all_latencies) if all_latencies else 0.0
+        tail_latency = (
+            sorted(all_latencies)[int(len(all_latencies) * 0.99)]
+            if len(all_latencies) >= 100 else
+            (sorted(all_latencies)[-1] if all_latencies else 0.0)
+        )
 
         convergence = self._measure_state_convergence()
 
@@ -465,6 +485,12 @@ class DecentralizedSimulation:
             tasks_generated=self._tasks_generated,
             tasks_completed=self._tasks_completed,
             state_convergence=convergence,
+            avg_latency=avg_latency,
+            tail_latency=tail_latency,
+            node_utilization=dict(
+                (nid, data['utilization']) for nid, data in node_totals.items()
+            ),
+            task_latencies=all_latencies,
         )
 
     def _handle_task_arrival(self) -> None:
@@ -499,18 +525,27 @@ class DecentralizedSimulation:
         self._next_available[target_id] = completion_time
 
         self._pending_completions.append(
-            (task['id'], target_id, cost, completion_time)
+            (task['id'], target_id, cost, completion_time, task['arrival_time'])
         )
 
     def _process_completions(self) -> None:
         """Process all task completions whose time has come."""
-        still_pending: list[tuple[str, str, float, float]] = []
+        still_pending: list[tuple[str, str, float, float, float]] = []
 
-        for task_id, node_id, cost, completion_time in self._pending_completions:
+        for task_id, node_id, cost, completion_time, arrival_time in self._pending_completions:
             if completion_time <= self._current_time:
                 self._tasks_completed += 1
                 self._node_completions[node_id] += 1
                 self._node_costs[node_id].append(cost)
+
+                # Per-task latency tracking
+                latency = completion_time - arrival_time
+                self._task_latencies.append(latency)
+
+                # Per-node busy time tracking
+                start_time = max(arrival_time, self._next_available.get(node_id, 0.0))
+                busy_time = completion_time - start_time
+                self._node_busy_time[node_id] += max(0.0, busy_time)
 
                 target_node = self._get_node_by_id(node_id).node
                 task_obj = Task(
@@ -523,7 +558,7 @@ class DecentralizedSimulation:
                     if _is_gossip_capable(dn.balancer):
                         dn.balancer.on_complete(task_obj, target_node, cost)
             else:
-                still_pending.append((task_id, node_id, cost, completion_time))
+                still_pending.append((task_id, node_id, cost, completion_time, arrival_time))
 
         self._pending_completions = still_pending
 
@@ -532,14 +567,34 @@ class DecentralizedSimulation:
 
         Returns a value in [0, 1] where 1 = perfectly converged (all nodes
         have identical assignment counts). Only works for gossip-capable
-        balancers.
+        balancers that have actually exchanged state.
+
+        Tries 'total_assignments' first (most balancers), then 'total_pulls'
+        (MF-MAB), then falls back to the largest numeric key in the snapshot.
         """
+        # Only measure convergence if gossip actually happened
+        if not self._gossip_exchanges:
+            return None
+
         gossip_balancers = [b for b in self._balancers if _is_gossip_capable(b)]
         if len(gossip_balancers) < 2:
             return None
 
         snaps = [_get_snapshot(b) for b in gossip_balancers]
-        totals = [s.get('total_assignments', 0) for s in snaps]
+
+        # Find the key to use: prefer total_assignments, then total_pulls,
+        # then any key with 'assign' or 'pull' in the name
+        def _get_count(snap: dict) -> int:
+            for key in ('total_assignments', 'total_pulls'):
+                if key in snap:
+                    return int(snap[key])
+            # Fallback: find any key whose value is an int > 0
+            for k, v in snap.items():
+                if isinstance(v, (int, float)) and v > 0 and 'assign' in k.lower():
+                    return int(v)
+            return 0
+
+        totals = [_get_count(s) for s in snaps]
         if not totals or all(t == 0 for t in totals):
             return None
 
